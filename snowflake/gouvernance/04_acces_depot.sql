@@ -1,0 +1,65 @@
+-- =====================================================================
+-- 04_acces_depot.sql — accès aux lignes par rôle et dépôt
+-- Exécuter avec GOUVERNANCE après 03_masquage.sql. Rejouable.
+-- '*' signifie tous les dépôts, y compris une valeur inconnue à contrôler.
+-- =====================================================================
+
+USE SECONDARY ROLES NONE;
+USE ROLE GOUVERNANCE;
+USE WAREHOUSE NYC_TAXI_WH;
+
+CREATE TABLE IF NOT EXISTS NYC_TAXI.GOUVERNANCE.ACCES_DEPOT (
+    role_name VARCHAR NOT NULL,
+    depot     VARCHAR NOT NULL
+)
+COMMENT = 'Correspondance entre rôle principal et dépôt visible ; * signifie tous';
+
+COMMENT ON COLUMN NYC_TAXI.GOUVERNANCE.ACCES_DEPOT.role_name IS
+  'Nom exact du rôle principal évalué par CURRENT_ROLE.';
+COMMENT ON COLUMN NYC_TAXI.GOUVERNANCE.ACCES_DEPOT.depot IS
+  'Nom normalisé du dépôt visible, ou * pour toutes les valeurs.';
+
+DELETE FROM NYC_TAXI.GOUVERNANCE.ACCES_DEPOT;
+INSERT INTO NYC_TAXI.GOUVERNANCE.ACCES_DEPOT (role_name, depot) VALUES
+  ('TRANSFORMER', '*'),
+  ('RH_PAIE', '*'),
+  ('ANALYSTE', '*'),
+  ('RESP_DEPOT_QUEENS', 'Queens'),
+  ('RESP_DEPOT_BRONX', 'Bronx');
+
+CREATE ROW ACCESS POLICY IF NOT EXISTS NYC_TAXI.GOUVERNANCE.RAP_DEPOT
+  AS (depot_ligne VARCHAR) RETURNS BOOLEAN -> FALSE
+  COMMENT = 'Filtre les tables RH selon GOUVERNANCE.ACCES_DEPOT';
+
+ALTER ROW ACCESS POLICY NYC_TAXI.GOUVERNANCE.RAP_DEPOT SET BODY ->
+  EXISTS (
+    SELECT 1
+    FROM NYC_TAXI.GOUVERNANCE.ACCES_DEPOT a
+    WHERE a.role_name = CURRENT_ROLE()
+      AND a.depot IN (depot_ligne, '*')
+  );
+
+-- RAW est également protégé : les administrateurs ne récupèrent aucune ligne RH.
+-- TRANSFORMER garde '*' afin de voir aussi les dépôts invalides lors de la qualité.
+ALTER TABLE NYC_TAXI.RAW.DRIVERS DROP ALL ROW ACCESS POLICIES;
+ALTER TABLE NYC_TAXI.RAW.DRIVERS
+  ADD ROW ACCESS POLICY NYC_TAXI.GOUVERNANCE.RAP_DEPOT ON (depot);
+
+ALTER TABLE NYC_TAXI.RAW.DRIVER_SHIFTS DROP ALL ROW ACCESS POLICIES;
+ALTER TABLE NYC_TAXI.RAW.DRIVER_SHIFTS
+  ADD ROW ACCESS POLICY NYC_TAXI.GOUVERNANCE.RAP_DEPOT ON (depot);
+
+ALTER TABLE NYC_TAXI.MARTS.DIM_DRIVER DROP ALL ROW ACCESS POLICIES;
+ALTER TABLE NYC_TAXI.MARTS.DIM_DRIVER
+  ADD ROW ACCESS POLICY NYC_TAXI.GOUVERNANCE.RAP_DEPOT ON (depot);
+
+ALTER TABLE NYC_TAXI.MARTS.MART_DRIVER_MONTHLY DROP ALL ROW ACCESS POLICIES;
+ALTER TABLE NYC_TAXI.MARTS.MART_DRIVER_MONTHLY
+  ADD ROW ACCESS POLICY NYC_TAXI.GOUVERNANCE.RAP_DEPOT ON (depot);
+
+SELECT *
+FROM NYC_TAXI.GOUVERNANCE.ACCES_DEPOT
+ORDER BY role_name, depot;
+
+SHOW ROW ACCESS POLICIES IN SCHEMA NYC_TAXI.GOUVERNANCE;
+

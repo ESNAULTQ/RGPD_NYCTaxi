@@ -1,0 +1,13 @@
+# Local source data: never publish RH CSV files.
+data/*.csv
+
+# Local environment and credentials.
+.env
+.env.*
+*.pem
+*.key
+
+# Common editor and operating-system files.
+.DS_Store
+.idea/
+.vscode/
